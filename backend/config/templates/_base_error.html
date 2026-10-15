@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}Error{% endblock %} — NTS</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+           background: #020617; color: #e2e8f0; font-family: "Segoe UI", system-ui, sans-serif; }
+    .panel { max-width: 30rem; padding: 3rem; border: 1px solid #1e293b; border-radius: 1.25rem;
+             background: #0f172a; box-shadow: 0 20px 60px rgba(0,0,0,.5); text-align: center; }
+    .eyebrow { font-size: .7rem; letter-spacing: .25em; font-weight: 800; color: #60a5fa; }
+    .code { font-size: 4rem; font-weight: 900; margin: .5rem 0 0; color: #f8fafc; }
+    .msg { margin: .75rem 0 1.5rem; color: #94a3b8; line-height: 1.6; }
+    a.btn { display: inline-block; padding: .75rem 1.5rem; border-radius: .75rem; background: #2563eb;
+            color: #fff; font-weight: 700; text-decoration: none; }
+    a.btn:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="eyebrow">NCC AIR WING — TRAINING &amp; TRACKING SYSTEM</div>
+    {% block content %}{% endblock %}
+    <a class="btn" href="/">Return to NTS</a>
+  </main>
+</body>
+</html>

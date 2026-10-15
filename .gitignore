@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+staticfiles/
+media/
+
+# Secrets and local data (never commit)
+.env
+.env.*
+!.env.example
+*.sqlite3
+
+# Node
+node_modules/
+frontend/dist/
+.vite/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+.freebuff/
