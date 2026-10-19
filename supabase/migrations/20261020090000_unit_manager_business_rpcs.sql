@@ -216,7 +216,7 @@ begin
   v_elig:=public.um_certificate_eligibility(p_cadet_id,p_level);
   if not coalesce((v_elig->>'eligible')::boolean,false) then raise exception 'Cadet is not eligible: %',v_elig using errcode='23514'; end if;
   insert into public.um_certificates(unit_id,cadet_id,certificate_level,certificate_number,issued_on,issued_by,notes)
-  values(v_unit,p_cadet_id,p_level,trim(p_certificate_number),p_issued_on,left(coalesce(p_notes,''),1000),auth.uid()) returning id into v_id;
+  values(v_unit,p_cadet_id,p_level,trim(p_certificate_number),p_issued_on,auth.uid(),left(coalesce(p_notes,''),1000)) returning id into v_id;
   return v_id;
 end;
 $$;
