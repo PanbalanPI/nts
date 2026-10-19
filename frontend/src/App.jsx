@@ -1,124 +1,42 @@
-import { useState, useEffect, useMemo } from "react";
-import { 
-  LayoutDashboard, Flag, Users, FileText, CheckSquare, 
-  Activity, CalendarCheck, ShieldCheck, FileKey 
-} from "lucide-react";
-import { api, handleUnauthorized } from "./api/client";
-import { DashboardLayout } from "./layouts/DashboardLayout";
-import { LoadingState } from "./components/ui/States";
-
-// Lazy or static page imports (we will build these)
-import DashboardPage from "./pages/Dashboard";
-import ParadesPage from "./pages/Parades";
-import CadetsPage from "./pages/Cadets";
-import FlightsPage from "./pages/Flights";
-import AttendancePage from "./pages/Attendance";
-import FitnessPage from "./pages/Fitness";
-import TasksPage from "./pages/Tasks";
-import CertificatesPage from "./pages/Certificates";
-import NotificationsPage from "./pages/Notifications";
-import AuditLogPage from "./pages/AuditLog";
-import UsersPage from "./pages/Users";
-import Login from "./pages/Login";
-
-function App() {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem("nts_user");
-    return saved ? JSON.parse(saved) : null;
-  });
-  const [activePage, setActivePage] = useState("dashboard");
-  const [authLoading, setAuthLoading] = useState(!!localStorage.getItem("nts_access"));
-
-  // Check valid token on load if we have one
-  useEffect(() => {
-    if (user) {
-      api.get("/api/auth/me/")
-        .then(data => {
-          setUser(data);
-          localStorage.setItem("nts_user", JSON.stringify(data));
-        })
-        .catch(() => {
-          handleUnauthorized();
-        })
-        .finally(() => setAuthLoading(false));
-    } else {
-      setAuthLoading(false);
-    }
-  }, []);
-
-  const handleLogin = (userData, token) => {
-    localStorage.setItem("nts_access", token);
-    localStorage.setItem("nts_user", JSON.stringify(userData));
-    setUser(userData);
-    setActivePage("dashboard");
-  };
-
-  const handleLogout = () => {
-    handleUnauthorized();
-  };
-
-  // Nav Items based on Role
-  const navItems = useMemo(() => {
-    if (!user) return [];
-    
-    const role = user.role;
-    const isCommand = role === "ANO" || role === "RANKED_SENIOR";
-    const isAno = role === "ANO";
-    
-    const items = [
-      { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { key: "parades", label: "Parades", icon: Flag },
-      { key: "attendance", label: "Attendance", icon: CalendarCheck },
-      { key: "fitness", label: "Fitness", icon: Activity },
-      { key: "tasks", label: "Tasks", icon: CheckSquare },
-      { key: "cadets", label: "Cadets", icon: Users },
-      { key: "flights", label: "Flights", icon: ShieldCheck },
-      { key: "certificates", label: "Certificates", icon: FileText },
-      { key: "notifications", label: "Notifications", icon: FileKey },
-    ];
-    
-    if (isCommand) {
-      items.push({ key: "audit", label: "Audit Log", icon: FileText });
-    }
-    
-    if (isAno) {
-      items.push({ key: "users", label: "Users", icon: Users });
-    }
-    
-    return items;
-  }, [user]);
-
-  if (authLoading) return <div className="h-screen flex items-center justify-center bg-slate-100"><LoadingState message="Authenticating..." /></div>;
-  if (!user) return <Login onLogin={handleLogin} />;
-
-  const pages = {
-    dashboard: <DashboardPage user={user} />,
-    parades: <ParadesPage user={user} />,
-    cadets: <CadetsPage user={user} />,
-    flights: <FlightsPage user={user} />,
-    attendance: <AttendancePage user={user} />,
-    fitness: <FitnessPage user={user} />,
-    tasks: <TasksPage user={user} />,
-    certificates: <CertificatesPage user={user} />,
-    notifications: <NotificationsPage user={user} />,
-    audit: <AuditLogPage user={user} />,
-    users: <UsersPage user={user} />
-  };
-
-  // Fallback to dashboard if a restricted route is somehow active
-  const renderPage = pages[activePage] || <DashboardPage user={user} />;
-
-  return (
-    <DashboardLayout 
-      user={user} 
-      onLogout={handleLogout} 
-      navItems={navItems}
-      activePage={activePage}
-      onNavigate={setActivePage}
-    >
-      {renderPage}
-    </DashboardLayout>
-  );
-}
-
+import {useEffect,useState,useCallback} from "react";
+import {createClient} from "@supabase/supabase-js";
+import {Activity,Airplay,AlertCircle,ArrowUpRight,Bell,CalendarDays,CheckCircle2,ClipboardCheck,FileBarChart2,FileText,Flag,LayoutDashboard,LoaderCircle,LogOut,Menu,Plane,Plus,RefreshCw,Search,ShieldCheck,Users,X,ListTodo,Dumbbell,Award} from "lucide-react";
+import "./App.css";
+const url=import.meta.env.VITE_SUPABASE_URL, key=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const db=url&&key?createClient(url,key):null;
+const roles={ANO:"ANO",RANKED_SENIOR:"Ranked Senior",FLIGHT_SENIOR:"Flight Senior",SENIOR:"Senior",JUNIOR:"Junior"};
+const nav=[["Overview","dashboard",LayoutDashboard],["Cadets","profiles",Users],["Flights","flights",Plane],["Parades","parades",Flag],["Activities","activities",CalendarDays],["Reports","reports",FileBarChart2],["Attendance","attendance_records",ClipboardCheck],["Tasks","tasks",ListTodo],["Fitness","fitness_assessments",Dumbbell],["Certificates","certificates",Award],["Notifications","notifications",Bell],["Audit trail","audit_events",ShieldCheck]];
+const configs={
+profiles:{title:"Cadet directory",fields:[["full_name","Full name","text"],["service_number","Service number","text"],["rank_title","Rank","text"]],cols:["full_name","service_number","role","rank_title","is_active"]},
+flights:{title:"Flights",fields:[["code","Flight code","text"],["name","Flight name","text"],["description","Description","text"]],cols:["code","name","description","is_active"]},
+parades:{title:"Parades",fields:[["title","Title","text"],["parade_kind","Type","select"],["parade_date","Date","date"],["location","Location","text"],["description","Description","text"]],cols:["title","parade_kind","parade_date","location","status"]},
+activities:{title:"Activities",fields:[["title","Title","text"],["activity_kind","Activity type","text"],["starts_at","Start","datetime-local"],["location","Location","text"],["description","Description","text"]],cols:["title","activity_kind","starts_at","location","status"]},
+reports:{title:"Reports & verification",fields:[["title","Report title","text"],["summary","Summary","text"],["objectives","Objectives","text"],["activities_conducted","Activities conducted","text"],["results","Results","text"]],cols:["title","summary","status","created_at"]},
+attendance_records:{title:"Attendance",fields:[],cols:["cadet_id","parade_id","activity_id","status","recorded_at"]},
+tasks:{title:"Tasks & orders",fields:[["title","Task title","text"],["description","Description","text"],["priority","Priority","select"],["due_at","Due date","datetime-local"]],cols:["title","priority","status","due_at"]},
+fitness_assessments:{title:"Fitness & readiness",fields:[],cols:["cadet_id","assessment_type","assessed_on","result","status"]},
+certificates:{title:"Certificates",fields:[],cols:["certificate_number","certificate_type","recipient_id","issued_on","status"]},
+notifications:{title:"Notifications",fields:[],cols:["title","message","type","created_at","read_at"]},
+audit_events:{title:"Audit trail",fields:[],cols:["action","object_type","actor_id","created_at"]}
+};
+const nice=v=>String(v??"—").replaceAll("_"," ").toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+const date=v=>v?new Date(v).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"—";
+const dt=v=>v?new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+function Status({value}){const s=String(value||"UNKNOWN").toUpperCase();const tone=["APPROVED","VERIFIED","COMPLETED","PRESENT","ACTIVE"].includes(s)?"green":["PENDING","SUBMITTED","UNDER_REVIEW","IN_PROGRESS"].includes(s)?"amber":["REJECTED","RETURNED","ABSENT","INACTIVE"].includes(s)?"red":"muted";return <span className={"status "+tone}><i/>{nice(s)}</span>}
+function Setup(){return <div className="center-screen"><div className="brand-mark"><Plane/></div><p className="eyebrow">NTS · AIR WING COMMAND</p><h1>Connect your command workspace</h1><p>Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in the Vercel project, then redeploy.</p><p className="muted">Use only the browser-safe publishable key. Never expose a service-role key.</p></div>}
+function Login({done}){const [email,E]=useState(""),[password,P]=useState(""),[busy,B]=useState(false),[err,Err]=useState("");async function submit(e){e.preventDefault();B(true);Err("");const r=await db.auth.signInWithPassword({email:email.trim(),password});B(false);if(r.error)Err("Sign-in failed. Check your credentials or contact the unit administrator.");else done()}return <div className="login"><section className="login-hero"><div className="brand-lock"><div className="brand-mark"><Plane/></div><b>NTS <span>AIR WING</span></b></div><p className="eyebrow">COMMAND · CONTROL · CONTINUITY</p><h1>Precision in<br/><em>every formation.</em></h1><p>One operational record for every parade, activity, report, and cadet milestone.</p><div className="login-foot">AUTHORIZED PERSONNEL · SECURE ACCESS</div></section><form className="login-form" onSubmit={submit}><p className="eyebrow">AUTHORIZED PERSONNEL ONLY</p><h2>Sign in to command</h2><p className="muted">Use the account assigned by your unit administrator.</p><label>Email address<input type="email" value={email} onChange={e=>E(e.target.value)} autoComplete="username" required/></label><label>Password<input type="password" value={password} onChange={e=>P(e.target.value)} autoComplete="current-password" required/></label>{err&&<p className="error"><AlertCircle size={16}/>{err}</p>}<button className="primary wide" disabled={busy}>{busy?"Authenticating…":"Sign in securely"} <ArrowUpRight size={16}/></button><p className="secure"><ShieldCheck size={16}/> Protected by Supabase Auth and database policies.</p></form></div>}
+function App(){const [session,S]=useState(null),[profile,P]=useState(null),[checking,C]=useState(true),[profileErr,PE]=useState(""),[page,Page]=useState("dashboard"),[rows,R]=useState([]),[counts,Counts]=useState({}),[busy,B]=useState(false),[search,Q]=useState(""),[modal,M]=useState(false),[notice,N]=useState(""),[error,Err]=useState(""),[mobile,Mobile]=useState(false);
+const role=profile?.role||"JUNIOR",cfg=configs[page],title=cfg?.title||"Command overview";
+const load=useCallback(async()=>{if(!db||!session)return;B(true);Err("");try{if(page==="dashboard"){const names=["profiles","flights","parades","activities","reports","tasks","attendance_records","notifications"];const res=await Promise.all(names.map(n=>db.from(n).select("*",{count:"exact",head:true})));const failed=res.find(x=>x.error);if(failed)throw failed.error;Counts(Object.fromEntries(names.map((n,i)=>[n,res[i].count||0])));const a=await db.from("audit_events").select("id,action,object_type,created_at").order("created_at",{ascending:false}).limit(8);R(a.error?[]:a.data||[])}else{let req=db.from(page).select("*").order("created_at",{ascending:false}).limit(250);if(page==="profiles")req=db.from("profiles").select("id,full_name,service_number,role,rank_title,flight_id,is_active,created_at").order("full_name");const res=await req;if(res.error)throw res.error;R(res.data||[])}}catch(e){R([]);Err(e.message||"Unable to load records. Check the database policies.")}finally{B(false)}},[page,session]);
+useEffect(()=>{if(!db)return;let alive=true;db.auth.getSession().then(async({data})=>{if(!alive)return;S(data.session);if(data.session){const p=await db.from("profiles").select("id,full_name,role,rank_title,flight_id,is_active").eq("id",data.session.user.id).maybeSingle();if(p.error)PE("Your login works, but your unit profile could not be loaded. Ask the ANO to check the profile and RLS policy.");else if(!p.data)PE("No unit profile is linked to this login. Ask the ANO to provision your profile.");else if(!p.data.is_active)PE("This profile is inactive. Contact the ANO.");else P(p.data)}setTimeout(()=>C(false),0)});const {data:{subscription}}=db.auth.onAuthStateChange((_e,s)=>{S(s);if(!s){P(null);PE("")}else setTimeout(async()=>{const p=await db.from("profiles").select("id,full_name,role,rank_title,flight_id,is_active").eq("id",s.user.id).maybeSingle();if(p.data?.is_active){P(p.data);PE("")}else PE("No active unit profile is linked to this login. Contact the ANO.")},0)});return()=>{alive=false;subscription.unsubscribe()}},[]);
+useEffect(()=>{if(session&&!profileErr)load()},[load,session,profileErr]);
+if(!db)return <Setup/>;if(checking)return <div className="center-screen"><LoaderCircle className="spin"/><p>Establishing secure session…</p></div>;if(!session)return <Login done={()=>{}}/>;if(profileErr||!profile)return <div className="center-screen"><ShieldCheck size={30}/><h2>Profile access required</h2><p>{profileErr||"Loading profile…"}</p><button className="primary" onClick={()=>db.auth.signOut()}>Sign out</button></div>;
+const allowed=nav.filter(([,k])=>role!=="JUNIOR"||["dashboard","parades","activities","reports","tasks","certificates","notifications"].includes(k));
+const visible=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(search.toLowerCase()));
+async function create(e){e.preventDefault();Err("");const values=Object.fromEntries(new FormData(e.currentTarget).entries());Object.keys(values).forEach(k=>{if(values[k]==="")values[k]=null});if(page==="parades"){values.commander_id=session.user.id;values.parade_kind=String(values.parade_kind||"").toUpperCase();values.status="DRAFT"}if(page==="reports"){values.author_id=session.user.id;values.status="DRAFT"}if(page==="activities"){values.organizer_id=session.user.id;values.status="PLANNED"}if(page==="tasks"){values.created_by=session.user.id;values.priority=String(values.priority||"NORMAL").toUpperCase();values.status="ASSIGNED"}const result=await db.from(page).insert(values);if(result.error)Err(result.error.message);else{M(false);N("Draft record created.");load()}}
+function cell(row,key){let v=row[key];if(key==="role"||key==="status"||key==="priority"||key==="parade_kind"||key==="is_active")return <Status value={key==="is_active"?(v?"ACTIVE":"INACTIVE"):v}/>;if(["created_at","recorded_at","starts_at","due_at"].includes(key))return dt(v);if(["parade_date","assessed_on","issued_on"].includes(key))return date(v);if(["summary","description","message"].includes(key))return <span className="truncate">{v||"—"}</span>;return v??"—"}
+return <div className="shell">{mobile&&<button className="scrim" onClick={()=>Mobile(false)}/>}<aside className={"sidebar "+(mobile?"open":"")}><div className="side-brand"><div className="brand-mark"><Plane/></div><div><b>NTS <span>COMMAND</span></b><small>AIR WING · OPERATIONS</small></div><button className="icon-button mobile-close" onClick={()=>Mobile(false)}><X/></button></div><div className="unit-label"><i/> UNIT SYSTEM <span>ACTIVE</span></div><nav>{allowed.map(([name,k,Icon])=><button key={k} className={"nav-link "+(page===k?"active":"")} onClick={()=>{Page(k);Q("");Mobile(false)}}><Icon size={18}/>{name}{k==="notifications"&&counts.notifications>0&&<b>{counts.notifications}</b>}</button>)}</nav><div className="side-bottom"><p className="eyebrow">COMMAND STRUCTURE</p>{Object.entries(roles).map(([k,v],i)=><div className={"role-line "+(role===k?"role-current":"")} key={k}><span>{i+1}</span>{v}{role===k&&<b>YOU</b>}</div>)}<div className="user-card"><div className="avatar">{(profile.full_name||"N").split(" ").slice(0,2).map(x=>x[0]).join("")}</div><div><b>{profile.full_name}</b><small>{roles[role]}</small></div><button className="icon-button" title="Sign out" onClick={()=>db.auth.signOut()}><LogOut size={16}/></button></div></div></aside>
+<main className="main"><header className="topbar"><button className="icon-button mobile-open" onClick={()=>Mobile(true)}><Menu/></button><div><p className="crumb">NTS / {title.toUpperCase()}</p><h1>{title}</h1></div><div className="top-actions"><span className="secure-pill"><ShieldCheck size={15}/> SECURE SESSION</span><button className="icon-button" onClick={()=>Page("notifications")}><Bell/></button><div className="avatar">{(profile.full_name||"N").split(" ").slice(0,2).map(x=>x[0]).join("")}</div></div></header><div className="content"><section className="welcome"><div><p className="eyebrow">UNIT OPERATIONS · {new Date().toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).toUpperCase()}</p><h2>{page==="dashboard"?"Welcome back, "+profile.full_name.split(" ")[0]+".":title}</h2><p>{cfg?"Operational records and current status.":"Your unit picture, activity queue, and readiness signals in one place."}</p></div><Airplay size={42}/></section>{notice&&<div className="success"><CheckCircle2 size={17}/>{notice}<button onClick={()=>N("")}><X size={15}/></button></div>}{error&&<div className="error-box"><AlertCircle size={17}/>{error}<button onClick={()=>Err("")}><X size={15}/></button></div>}
+{page==="dashboard"?<><div className="metrics">{[["Personnel",counts.profiles,Users,"profiles"],["Flights",counts.flights,Plane,"flights"],["Parades",counts.parades,Flag,"parades"],["Tasks",counts.tasks,ListTodo,"tasks"]].map(([name,n,Icon,k],i)=><button className="metric" key={name} onClick={()=>Page(k)}><div><small>{["PERSONNEL","ORGANIZATION","OPERATIONS","ASSIGNMENTS"][i]}</small><span><Icon/></span></div><strong>{n??"—"}</strong><p>{name}<ArrowUpRight size={15}/></p></button>)}</div><div className="dash-grid"><section className="panel"><div className="panel-head"><div><h3><Activity size={17}/> Command activity</h3><p>Latest audited system events</p></div><button className="text-button" onClick={()=>Page("audit_events")}>View audit trail ↗</button></div>{busy?<p className="empty">Loading activity…</p>:rows.length?<div className="activity-list">{rows.map(r=><div className="activity" key={r.id}><span className="activity-icon"><Activity size={16}/></span><div><b>{nice(r.action)}</b><small>{nice(r.object_type)}</small></div><time>{dt(r.created_at)}</time></div>)}</div>:<p className="empty">No audited activity recorded yet.</p>}</section><section className="panel"><div className="panel-head"><div><h3><ShieldCheck size={17}/> Operational picture</h3><p>Live database totals</p></div></div><div className="readiness"><div className="readiness-ring"><span>LIVE</span><b>{counts.reports??0}</b><small>REPORTS</small></div><p>Readiness percentage will appear when an auditable scoring calculation is configured.</p></div>{[["Reports","reports",FileBarChart2],["Attendance","attendance_records",ClipboardCheck],["Notifications","notifications",Bell]].map(([n,k,I])=><button className="quick-link" key={k} onClick={()=>Page(k)}><I size={17}/>{n}<ArrowUpRight size={15}/></button>)}</section></div><div className="policy"><ShieldCheck size={18}/><div><b>Role-based access is enforced by Supabase Row Level Security.</b><p>Signed in as {roles[role]}. Navigation is not a security boundary; the database must authorize every operation.</p></div></div></>:<section className="panel data-panel"><div className="panel-head"><div><h3>{title}</h3><p>{rows.length} record(s) returned from Supabase</p></div><div className="table-actions"><label className="search"><Search size={15}/><input placeholder="Search records…" value={search} onChange={e=>Q(e.target.value)}/></label>{cfg?.fields?.length>0&&role!=="JUNIOR"&&<button className="primary" onClick={()=>{Err("");M(true)}}><Plus size={16}/> New draft</button>}<button className="icon-button" onClick={load} title="Refresh"><RefreshCw size={16}/></button></div></div>{busy?<p className="empty"><LoaderCircle className="spin"/> Loading records…</p>:visible.length===0?<div className="empty-state"><FileText size={25}/><h3>{search?"No matching records":"No records yet"}</h3><p>Records appear here when they exist in the unit database.</p></div>:<div className="table-scroll"><table><thead><tr>{(cfg?.cols||[]).map(k=><th key={k}>{nice(k)}</th>)}</tr></thead><tbody>{visible.map((r,i)=><tr key={r.id||i}>{cfg.cols.map(k=><td key={k}>{cell(r,k)}</td>)}</tr>)}</tbody></table></div>}{page==="reports"&&<div className="policy"><ShieldCheck size={17}/><div><b>Verification actions are not exposed here.</b><p>Enable them only after server-side role rules and audited verification RPCs are confirmed.</p></div></div>}</section>}<footer><span>© {new Date().getFullYear()} NTS · AIR WING COMMAND</span><span><i/> SUPABASE DATA CONNECTION</span></footer></div></main>
+{modal&&cfg&&<div className="modal-cover"><form className="modal" onSubmit={create}><div className="modal-head"><div><p className="eyebrow">NEW OPERATIONAL RECORD</p><h2>Create draft</h2></div><button type="button" className="icon-button" onClick={()=>M(false)}><X/></button></div><div className="fields">{cfg.fields.map(([k,n,t])=><label key={k}>{n}{t==="select"?<select name={k} required><option value="">Choose…</option>{(k==="parade_kind"?["OFFICIAL","UNOFFICIAL"]:["LOW","NORMAL","HIGH","URGENT"]).map(v=><option key={v}>{v}</option>)}</select>:<input name={k} type={t} required={["title","full_name","code","name","parade_date"].includes(k)}/>}</label>)}</div><div className="modal-foot"><button type="button" className="secondary" onClick={()=>M(false)}>Cancel</button><button className="primary"><Plus size={16}/> Create draft</button></div><p className="muted tiny">Database policies authorize writes. Verification is a separate audited action.</p></form></div>}</div>}
 export default App;
