@@ -110,6 +110,10 @@ Deno.serve(async req => {
       const fullName = String(body.full_name ?? "").trim();
       const flightId = body.flight_id ? String(body.flight_id) : null;
       if (fullName.length < 2) return response({ error: "Full name is required." }, 400);
+      if (nextRole === "cadet" && targetRole.role !== "cadet") {
+        const { data: cadetRecord } = await admin.from("um_cadets").select("id").eq("user_id", targetUserId).eq("unit_id", unitId).maybeSingle();
+        if (!cadetRecord) return response({ error: "Create a cadet account with a regimental number instead of converting a staff account." }, 400);
+      }
       if (flightId) {
         const { data: flight, error } = await admin.from("um_flights").select("id").eq("id", flightId).eq("unit_id", unitId).eq("is_active", true).maybeSingle();
         if (error || !flight) return response({ error: "Selected flight is not active in this unit." }, 400);
