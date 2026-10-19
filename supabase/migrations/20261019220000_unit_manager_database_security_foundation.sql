@@ -53,7 +53,8 @@ create table if not exists public.um_flights (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(unit_id, code),
-  unique(unit_id, name)
+  unique(unit_id, name),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_profiles (
@@ -107,6 +108,7 @@ create table if not exists public.um_cadets (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(unit_id, regimental_no),
+  unique(unit_id, id),
   unique(user_id),
   foreign key (unit_id, flight_id) references public.um_flights(unit_id, id) deferrable initially deferred
 );
@@ -156,7 +158,8 @@ create table if not exists public.um_parades (
   updated_at timestamptz not null default now(),
   check (ends_at > starts_at),
   check (status <> 'CANCELLED' or nullif(btrim(cancel_reason), '') is not null),
-  check (target_years <@ array[1,2,3]::smallint[])
+  check (target_years <@ array[1,2,3]::smallint[]),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_holidays (
@@ -211,7 +214,8 @@ create table if not exists public.um_inventory_items (
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique(unit_id, item_code)
+  unique(unit_id, item_code),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_inventory_issues (
@@ -250,7 +254,8 @@ create table if not exists public.um_fitness_metrics (
   higher_is_better boolean not null default true,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  unique(unit_id, code)
+  unique(unit_id, code),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_fitness_standards (
@@ -274,7 +279,8 @@ create table if not exists public.um_fitness_tests (
   metric_id uuid not null references public.um_fitness_metrics(id) on delete restrict,
   recorded_by uuid not null references auth.users(id) on delete restrict,
   notes text not null default '',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_fitness_results (
@@ -298,7 +304,8 @@ create table if not exists public.um_syllabus_items (
   sequence_no integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  unique(unit_id, certificate_level, subject, topic)
+  unique(unit_id, certificate_level, subject, topic),
+  unique(unit_id, id)
 );
 
 create table if not exists public.um_cadet_syllabus_progress (
@@ -454,7 +461,7 @@ stable
 security definer
 set search_path = pg_catalog, public
 as $$
-  select case when count(*) = 1 then min(r.unit_id) else null end
+  select case when count(*) = 1 then (array_agg(r.unit_id))[1] else null end
   from public.um_user_roles r
   where r.user_id = auth.uid();
 $$;
@@ -750,7 +757,7 @@ using (private.um_can_read_cadet((select auth.uid()), unit_id, cadet_id));
 create policy um_leave_insert_self on public.um_leave_requests for insert to authenticated
 with check (
   status = 'PENDING'
-  and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.user_id = (select auth.uid()))
+  and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_leave_requests.unit_id and c.user_id = (select auth.uid()))
 );
 create policy um_leave_review_staff on public.um_leave_requests for update to authenticated
 using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer'))
@@ -763,7 +770,7 @@ with check (
   private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin')
   or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer')
   or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (
-    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id()
+    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_attendance.unit_id and c.flight_id = private.current_flight_id()
   ))
 );
 create policy um_attendance_update_staff on public.um_attendance for update to authenticated
@@ -771,14 +778,14 @@ using (
   private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin')
   or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer')
   or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (
-    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id()
+    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_fitness_results.unit_id and c.flight_id = private.current_flight_id()
   ))
 )
 with check (
   private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin')
   or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer')
   or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (
-    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id()
+    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_cadet_syllabus_progress.unit_id and c.flight_id = private.current_flight_id()
   ))
 );
 
@@ -794,7 +801,7 @@ create policy um_inventory_issues_request_self on public.um_inventory_issues for
 with check (
   status = 'REQUESTED'
   and issued_by is null
-  and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.user_id = (select auth.uid()))
+  and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_inventory_issues.unit_id and c.user_id = (select auth.uid()))
 );
 create policy um_inventory_issues_manage_command on public.um_inventory_issues for all to authenticated
 using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer'))
@@ -911,3 +918,36 @@ for each row execute function private.um_enforce_parade_transition();
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
 grant usage, select on sequence public.um_audit_log_id_seq to authenticated;
+
+
+-- Composite foreign keys prevent valid unit memberships from being combined
+-- with records owned by another unit. These are essential to tenant isolation.
+alter table public.um_parades add constraint um_parades_unit_id_unique unique (unit_id, id);
+alter table public.um_attendance add constraint um_attendance_parade_same_unit_fk
+  foreign key (unit_id, parade_id) references public.um_parades(unit_id, id) on delete cascade;
+alter table public.um_attendance add constraint um_attendance_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete cascade;
+alter table public.um_leave_requests add constraint um_leave_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete cascade;
+alter table public.um_inventory_issues add constraint um_issue_item_same_unit_fk
+  foreign key (unit_id, item_id) references public.um_inventory_items(unit_id, id) on delete restrict;
+alter table public.um_inventory_issues add constraint um_issue_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete restrict;
+alter table public.um_stock_adjustments add constraint um_stock_item_same_unit_fk
+  foreign key (unit_id, item_id) references public.um_inventory_items(unit_id, id) on delete restrict;
+alter table public.um_fitness_standards add constraint um_standards_metric_same_unit_fk
+  foreign key (unit_id, metric_id) references public.um_fitness_metrics(unit_id, id) on delete cascade;
+alter table public.um_fitness_tests add constraint um_fitness_test_metric_same_unit_fk
+  foreign key (unit_id, metric_id) references public.um_fitness_metrics(unit_id, id) on delete restrict;
+alter table public.um_fitness_results add constraint um_fitness_result_test_same_unit_fk
+  foreign key (unit_id, test_id) references public.um_fitness_tests(unit_id, id) on delete cascade;
+alter table public.um_fitness_results add constraint um_fitness_result_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete cascade;
+alter table public.um_cadet_syllabus_progress add constraint um_progress_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete cascade;
+alter table public.um_cadet_syllabus_progress add constraint um_progress_topic_same_unit_fk
+  foreign key (unit_id, syllabus_item_id) references public.um_syllabus_items(unit_id, id) on delete cascade;
+alter table public.um_exam_results add constraint um_exam_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete cascade;
+alter table public.um_certificates add constraint um_certificate_cadet_same_unit_fk
+  foreign key (unit_id, cadet_id) references public.um_cadets(unit_id, id) on delete restrict;
