@@ -144,6 +144,27 @@ Deno.serve(async req => {
       }
       return response({ ok: true, message: role === "cadet" ? "Cadet account created. Share the temporary password securely and require a change at first login." : "Invitation email sent.", username: role === "cadet" ? regimentalNo : undefined, email, temporary_password: password ?? undefined });
     }
+    if (action === "update_member") {
+      const targetUserId = String(body.user_id ?? "");
+      const nextRole = String(body.role ?? "");
+      const isActive = body.is_active === true;
+      const flightId = body.flight_id ? String(body.flight_id) : null;
+      if (!targetUserId || !["officer","senior","cadet"].includes(nextRole)) return response({ error: "Choose an existing member and a supported role." }, 400);
+      if (targetUserId === user.id) return response({ error: "You cannot change your own access from this screen." }, 403);
+      const { data: targetRole, error: targetRoleError } = await admin.from("um_user_roles").select("role").eq("user_id", targetUserId).eq("unit_id", unitId).maybeSingle();
+      if (targetRoleError || !targetRole || targetRole.role === "admin") return response({ error: "This member cannot be changed through routine user management." }, 403);
+      if (flightId) {
+        const { data: flight, error } = await admin.from("um_flights").select("id").eq("id", flightId).eq("unit_id", unitId).eq("is_active", true).maybeSingle();
+        if (error || !flight) return response({ error: "Selected flight is not active in this unit." }, 400);
+      }
+      const { error: profileUpdateError } = await admin.from("um_profiles").update({ flight_id: flightId, is_active: isActive }).eq("user_id", targetUserId).eq("unit_id", unitId);
+      if (profileUpdateError) throw profileUpdateError;
+      const { error: roleUpdateError } = await admin.from("um_user_roles").update({ role: nextRole, granted_by: user.id }).eq("user_id", targetUserId).eq("unit_id", unitId);
+      if (roleUpdateError) throw roleUpdateError;
+      const { error: cadetUpdateError } = await admin.from("um_cadets").update({ flight_id: flightId, status: isActive ? "ACTIVE" : "INACTIVE" }).eq("user_id", targetUserId).eq("unit_id", unitId);
+      if (cadetUpdateError) throw cadetUpdateError;
+      return response({ ok: true, message: "Member access and flight assignment updated." });
+    }
     return response({ error: "Unsupported action." }, 400);
   } catch (error) {
     console.error("unit-manager-admin-users:", error);
