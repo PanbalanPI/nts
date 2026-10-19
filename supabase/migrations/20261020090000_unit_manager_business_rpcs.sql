@@ -235,3 +235,115 @@ revoke all on function public.um_return_item(uuid,public.um_inventory_condition,
 revoke all on function public.um_review_leave(uuid,public.um_leave_status,text) from public,anon;
 revoke all on function public.um_certificate_eligibility(uuid,public.um_certificate_level) from public,anon;
 revoke all on function public.um_issue_certificate(uuid,public.um_certificate_level,text,date,text) from public,anon;
+
+-- Force first-login password changes at the database boundary.
+create or replace function private.um_password_ready()
+returns boolean language sql stable security definer
+set search_path = pg_catalog, public
+as $$
+  select exists (
+    select 1 from public.um_profiles p
+    where p.user_id = auth.uid()
+      and p.is_active
+      and not p.force_password_change
+  );
+$$;
+revoke all on function private.um_password_ready() from public, anon;
+grant execute on function private.um_password_ready() to authenticated;
+
+do $$
+declare t record;
+begin
+  for t in
+    select tablename from pg_tables
+    where schemaname='public' and tablename like 'um\_%' escape '\'
+      and tablename <> 'um_profiles'
+  loop
+    execute format('drop policy if exists um_password_ready_gate on public.%I',t.tablename);
+    execute format('create policy um_password_ready_gate on public.%I as restrictive for all to authenticated using (private.um_password_ready()) with check (private.um_password_ready())',t.tablename);
+  end loop;
+end $$;
+
+create or replace function public.um_seed_demo()
+returns jsonb language plpgsql security definer
+set search_path = pg_catalog, public, private
+as $$
+declare v_unit uuid; v_flights uuid[]; v_flight uuid; v_cadet uuid; v_parade uuid; v_date date; i integer; j integer; v_created integer := 0; v_parades integer := 0; v_attendance integer := 0; v_code text; v_name text;
+begin
+  v_unit:=private.current_unit_id();
+  if v_unit is null or not private.um_has_role_in_unit(auth.uid(),v_unit,'admin') then
+    raise exception 'Only a unit admin can seed demo records' using errcode='42501';
+  end if;
+
+  insert into public.um_settings(unit_id,attendance_threshold,leave_counts_as_present,flight_label,settings,updated_by)
+  values(v_unit,75,true,'Flight','{}'::jsonb,auth.uid())
+  on conflict(unit_id) do nothing;
+
+  for i in 1..3 loop
+    v_code:=case i when 1 then 'ALPHA' when 2 then 'BRAVO' else 'CHARLIE' end;
+    v_name:=case i when 1 then 'Alpha Flight' when 2 then 'Bravo Flight' else 'Charlie Flight' end;
+    insert into public.um_flights(unit_id,code,name,description)
+    values(v_unit,v_code,v_name,'Demo flight for NCC Unit Manager')
+    on conflict(unit_id,code) do update set name=excluded.name
+    returning id into v_flight;
+    v_flights[i]:=v_flight;
+  end loop;
+
+  for i in 1..30 loop
+    v_flight:=v_flights[((i-1)%3)+1];
+    insert into public.um_cadets(unit_id,flight_id,regimental_no,full_name,wing,year_of_training,rank,status)
+    values(v_unit,v_flight,format('DEMO-%03s',i),format('Demo Cadet %s',lpad(i::text,2,'0')),'AIR',((i-1)%3)+1,
+      case when i<=3 then 'Senior' else 'Cadet' end,'ACTIVE')
+    on conflict(unit_id,regimental_no) do update set flight_id=excluded.flight_id,full_name=excluded.full_name
+    returning id into v_cadet;
+    v_created:=v_created+1;
+  end loop;
+
+  insert into public.um_inventory_items(unit_id,item_code,name,description,total_qty,condition,reorder_level,is_active)
+  values
+    (v_unit,'DEMO-DRILL-RIFLE','Drill rifle','Training equipment only',24,'SERVICEABLE',5,true),
+    (v_unit,'DEMO-BELT','Ceremonial belt','Demo kit inventory',18,'SERVICEABLE',4,true),
+    (v_unit,'DEMO-BOOT','Parade boot pair','Demo kit inventory',16,'NEEDS_REPAIR',4,true)
+  on conflict(unit_id,item_code) do nothing;
+
+  insert into public.um_fitness_metrics(unit_id,code,name,unit_label,higher_is_better,is_active)
+  values
+    (v_unit,'DEMO-RUN','1.6 km run','seconds',false,true),
+    (v_unit,'DEMO-PUSHUP','Push-ups','repetitions',true,true),
+    (v_unit,'DEMO-SITUP','Sit-ups','repetitions',true,true)
+  on conflict(unit_id,code) do nothing;
+
+  insert into public.um_syllabus_items(unit_id,certificate_level,subject,topic,sequence_no,is_active)
+  values
+    (v_unit,'A','NCC Basics','NCC organisation and ethos',1,true),
+    (v_unit,'A','Drill','Attention, stand at ease and turns',2,true),
+    (v_unit,'A','Air Wing','Basic aviation knowledge',3,true),
+    (v_unit,'B','Air Wing','Aeromodelling fundamentals',1,true),
+    (v_unit,'B','Navigation','Map reading and navigation',2,true),
+    (v_unit,'B','Leadership','Command and leadership',3,true),
+    (v_unit,'C','Air Wing','Air power and aerospace systems',1,true),
+    (v_unit,'C','Leadership','Advanced leadership',2,true)
+  on conflict(unit_id,certificate_level,subject,topic) do nothing;
+
+  for i in 1..8 loop
+    v_date:=current_date - (i*7);
+    insert into public.um_parades(unit_id,created_by,title,parade_date,starts_at,ends_at,venue,parade_type,description,target_flights,target_years,status,approved_by,approved_at,completed_at)
+    values(v_unit,auth.uid(),format('Demo Training Parade %s',9-i),v_date,'06:00','08:00','Unit Parade Ground','DRILL','Fictional sample record',v_flights,array[1,2,3]::smallint[],'COMPLETED',auth.uid(),now(),now())
+    returning id into v_parade;
+    v_parades:=v_parades+1;
+    for j in 1..30 loop
+      select c.id into v_cadet from public.um_cadets c where c.unit_id=v_unit and c.regimental_no=format('DEMO-%03s',j);
+      insert into public.um_attendance(unit_id,parade_id,cadet_id,status,notes,marked_by)
+      values(v_unit,v_parade,v_cadet,
+        case when (j+i)%11=0 then 'ABSENT'::public.um_attendance_status when (j+i)%7=0 then 'LATE'::public.um_attendance_status else 'PRESENT'::public.um_attendance_status end,
+        'Fictional demo attendance',auth.uid())
+      on conflict(parade_id,cadet_id) do nothing;
+      v_attendance:=v_attendance+1;
+    end loop;
+  end loop;
+
+  return jsonb_build_object('unit_id',v_unit,'flights_created_or_updated',3,'cadets_created_or_updated',v_created,'parades_created',v_parades,'attendance_rows_attempted',v_attendance,'demo_data',true);
+end;
+$$;
+grant execute on function public.um_seed_demo() to authenticated;
+revoke all on function public.um_seed_demo() from public,anon;
