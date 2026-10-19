@@ -268,6 +268,7 @@ create table if not exists public.um_fitness_standards (
   minimum_pass numeric not null,
   excellent numeric not null,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique(unit_id, metric_id, gender, age_min, age_max)
 );
 
@@ -292,6 +293,7 @@ create table if not exists public.um_fitness_results (
   result_status text not null default 'RECORDED' check (result_status in ('BELOW_STANDARD','PASS','EXCELLENT','RECORDED')),
   notes text not null default '',
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique(test_id, cadet_id)
 );
 
@@ -671,6 +673,7 @@ begin
     'um_notifications','um_settings','um_audit_log'
   ] loop
     execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
   end loop;
 end $$;
@@ -914,9 +917,7 @@ drop trigger if exists um_parade_status_guard on public.um_parades;
 create trigger um_parade_status_guard before insert or update of status, unit_id on public.um_parades
 for each row execute function private.um_enforce_parade_transition();
 
--- Public/anonymous clients receive no privileges on the new schema objects.
-revoke all on all tables in schema public from anon;
-revoke all on all sequences in schema public from anon;
+-- Anonymous clients receive no privileges on the new Unit Manager tables.
 grant usage, select on sequence public.um_audit_log_id_seq to authenticated;
 
 
