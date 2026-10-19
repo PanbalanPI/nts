@@ -1,0 +1,19 @@
+{
+  "name": "NCC Unit Manager",
+  "short_name": "NCC Unit",
+  "description": "NCC unit operations and cadet progress management.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080e18",
+  "theme_color": "#080e18",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
