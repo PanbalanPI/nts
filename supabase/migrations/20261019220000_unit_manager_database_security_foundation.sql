@@ -781,14 +781,14 @@ using (
   private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin')
   or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer')
   or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (
-    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_fitness_results.unit_id and c.flight_id = private.current_flight_id()
+    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_attendance.unit_id and c.flight_id = private.current_flight_id()
   ))
 )
 with check (
   private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin')
   or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer')
   or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (
-    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_cadet_syllabus_progress.unit_id and c.flight_id = private.current_flight_id()
+    select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_attendance.unit_id and c.flight_id = private.current_flight_id()
   ))
 );
 
@@ -833,7 +833,7 @@ with check (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') o
 create policy um_fitness_results_select_scope on public.um_fitness_results for select to authenticated
 using (private.um_can_read_cadet((select auth.uid()), unit_id, cadet_id));
 create policy um_fitness_results_manage_staff on public.um_fitness_results for all to authenticated
-using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id())))
+using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_fitness_results.unit_id and c.flight_id = private.current_flight_id())))
 with check (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id())));
 
 create policy um_syllabus_select_member on public.um_syllabus_items for select to authenticated
@@ -844,7 +844,7 @@ with check (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') o
 create policy um_syllabus_progress_select_scope on public.um_cadet_syllabus_progress for select to authenticated
 using (private.um_can_read_cadet((select auth.uid()), unit_id, cadet_id));
 create policy um_syllabus_progress_manage_staff on public.um_cadet_syllabus_progress for all to authenticated
-using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id())))
+using (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = um_cadet_syllabus_progress.unit_id and c.flight_id = private.current_flight_id())))
 with check (private.um_has_role_in_unit((select auth.uid()), unit_id, 'admin') or private.um_has_role_in_unit((select auth.uid()), unit_id, 'officer') or (private.um_has_role_in_unit((select auth.uid()), unit_id, 'senior') and exists (select 1 from public.um_cadets c where c.id = cadet_id and c.unit_id = unit_id and c.flight_id = private.current_flight_id())));
 
 create policy um_exam_results_select_scope on public.um_exam_results for select to authenticated
