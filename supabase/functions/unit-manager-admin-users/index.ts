@@ -17,13 +17,17 @@ const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: fa
 function tempPassword() {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  const raw = Array.from(bytes, b => alphabet.charAt(b % alphabet.length)).join("");
-  return raw + "aA7!";
+  return Array.from(bytes, b => alphabet.charAt(b % alphabet.length)).join("") + "aA7!";
 }
 function safeRegimental(value: unknown) {
   const valueText = String(value ?? "").trim();
   if (!/^[A-Za-z0-9-]{3,40}$/.test(valueText)) throw new Error("Regimental number must be 3–40 letters, digits or hyphens.");
   return valueText;
+}
+function safeUnitCode(value: unknown) {
+  const code = String(value ?? "").trim().toUpperCase();
+  if (!/^[A-Z0-9-]{2,20}$/.test(code)) throw new Error("Unit code must be 2–20 letters, digits or hyphens.");
+  return code;
 }
 async function authUser(req: Request) {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -32,60 +36,63 @@ async function authUser(req: Request) {
   if (error || !data.user) throw new Error("Your session is invalid or expired.");
   return data.user;
 }
-async function requireAdmin(userId: string) {
-  const { data, error } = await admin.from("um_user_roles").select("unit_id,role").eq("user_id", userId).eq("role", "admin").maybeSingle();
-  if (error || !data) throw new Error("Only a unit admin may perform this action.");
-  const { data: profile, error: profileError } = await admin.from("um_profiles").select("id,unit_id,full_name,is_active").eq("user_id", userId).eq("unit_id", data.unit_id).maybeSingle();
-  if (profileError || !profile?.is_active) throw new Error("The admin profile is inactive or unavailable.");
-  return { unitId: data.unit_id as string, profile };
+async function requireUnitAdmin(userId: string) {
+  const { data: role, error: roleError } = await admin.from("um_user_roles")
+    .select("unit_id,role").eq("user_id", userId).eq("role", "admin").maybeSingle();
+  if (roleError || !role) throw new Error("Only the ANO or an approved delegated administrator may perform this action.");
+  const { data: profile, error: profileError } = await admin.from("um_profiles")
+    .select("id,user_id,unit_id,full_name,is_active,access_level")
+    .eq("user_id", userId).eq("unit_id", role.unit_id).maybeSingle();
+  if (profileError || !profile?.is_active || !["ano", "unit_admin"].includes(profile.access_level)) {
+    throw new Error("Your unit administrator access is inactive or unavailable.");
+  }
+  return { unitId: role.unit_id as string, profile };
+}
+async function requestUnit(body: Record<string, unknown>) {
+  const regimentalNo = safeRegimental(body.regimental_no);
+  const unitCode = safeUnitCode(body.unit_code);
+  const fullName = String(body.full_name ?? "").trim();
+  const rankTitle = String(body.rank_title ?? "").trim();
+  const appointment = String(body.appointment ?? "").trim() || null;
+  const unitName = String(body.unit_name ?? "").trim();
+  const password = String(body.password ?? "");
+  const timezone = String(body.timezone ?? "Asia/Kolkata").trim() || "Asia/Kolkata";
+  if (fullName.length < 2 || fullName.length > 160) throw new Error("Enter the applicant's full name.");
+  if (rankTitle.length < 2 || rankTitle.length > 100) throw new Error("Enter the applicant's NCC rank.");
+  if (unitName.length < 2 || unitName.length > 120) throw new Error("Enter a valid unit name.");
+  if (password.length < 12) throw new Error("Password must contain at least 12 characters.");
+  const email = regimentalNo.toLowerCase() + "@unit.local";
+  const { data: existingUnit } = await admin.from("um_units").select("id").ilike("code", unitCode).maybeSingle();
+  if (existingUnit) throw new Error("A unit with this code already exists.");
+  const { data: existingRequest } = await admin.from("um_unit_registration_requests")
+    .select("id").ilike("unit_code", unitCode).eq("status", "pending").maybeSingle();
+  if (existingRequest) throw new Error("A registration request for this unit code is already pending.");
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email, password, email_confirm: true, user_metadata: { full_name: fullName, registration_pending: true },
+  });
+  if (createError || !created.user) throw createError ?? new Error("Could not create applicant account.");
+  const { error: requestError } = await admin.from("um_unit_registration_requests").insert({
+    applicant_user_id: created.user.id, full_name: fullName, email, regimental_no: regimentalNo,
+    rank_title: rankTitle, appointment, unit_name: unitName, unit_code: unitCode, timezone, status: "pending",
+  });
+  if (requestError) {
+    await admin.auth.admin.deleteUser(created.user.id);
+    throw requestError;
+  }
+  return response({ ok: true, status: "pending", message: "Unit registration submitted. Your account will receive unit access only after Platform Super Admin approval." }, 201);
 }
 
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return response({ error: "POST required." }, 405);
   try {
-    const body = await req.json();
+    const body = await req.json() as Record<string, unknown>;
     const action = String(body.action ?? "");
-    if (action === "bootstrap") {
-      const secret = Deno.env.get("UNIT_MANAGER_BOOTSTRAP_SECRET");
-      if (!secret || typeof body.bootstrap_secret !== "string" || body.bootstrap_secret.length < 20) {
-        return response({ error: "Bootstrap is not configured. Set UNIT_MANAGER_BOOTSTRAP_SECRET in Supabase Edge Function secrets." }, 503);
-      }
-      const [providedHash, expectedHash] = await Promise.all([
-        crypto.subtle.digest("SHA-256", new TextEncoder().encode(body.bootstrap_secret)),
-        crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret)),
-      ]);
-      const a = new Uint8Array(providedHash), b = new Uint8Array(expectedHash);
-      if (a.length !== b.length || a.some((v, i) => v !== b[i])) return response({ error: "Invalid bootstrap secret." }, 403);
-      const { count, error: countError } = await admin.from("um_user_roles").select("id", { count: "exact", head: true });
-      if (countError) throw countError;
-      if ((count ?? 0) > 0) return response({ error: "Bootstrap is locked because a role assignment already exists. Ask an existing unit admin to invite users." }, 409);
-      const regimentalNo = safeRegimental(body.regimental_no);
-      const email = regimentalNo.toLowerCase() + "@unit.local";
-      const fullName = String(body.full_name ?? "").trim();
-      const rankTitle = String(body.rank_title ?? "").trim();
-      const unitName = String(body.unit_name ?? "").trim();
-      const unitCode = String(body.unit_code ?? "").trim().toUpperCase();
-      const password = String(body.password ?? "");
-      if (fullName.length < 2 || rankTitle.length < 2 || rankTitle.length > 100 || unitName.length < 2 || !/^[A-Z0-9-]{2,20}$/.test(unitCode) || password.length < 12) {
-        return response({ error: "Provide a valid regimental number, full name, rank/appointment, unit name/code and an initial password of at least 12 characters." }, 400);
-      }
-      const { data: unit, error: unitError } = await admin.from("um_units").insert({ name: unitName, code: unitCode, timezone: "Asia/Kolkata" }).select("id").single();
-      if (unitError) throw unitError;
-      const { data: created, error: userError } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: {} });
-      if (userError || !created.user) {
-        await admin.from("um_units").delete().eq("id", unit.id);
-        throw userError ?? new Error("Could not create admin account.");
-      }
-      const userId = created.user.id;
-      const { error: profileError } = await admin.from("um_profiles").insert({ user_id: userId, unit_id: unit.id, full_name: fullName, email, regimental_no: regimentalNo, rank_title: rankTitle, force_password_change: false, is_active: true });
-      if (profileError) { await admin.auth.admin.deleteUser(userId); await admin.from("um_units").delete().eq("id", unit.id); throw profileError; }
-      const { error: roleError } = await admin.from("um_user_roles").insert({ user_id: userId, unit_id: unit.id, role: "admin" });
-      if (roleError) { await admin.auth.admin.deleteUser(userId); await admin.from("um_units").delete().eq("id", unit.id); throw roleError; }
-      return response({ ok: true, message: "Unit and first Administrator created. Sign in with regimental number " + regimentalNo + ".", unit_id: unit.id });
-    }
+
+    if (action === "request_unit") return await requestUnit(body);
 
     const user = await authUser(req);
+
     if (action === "change_password") {
       const currentPassword = String(body.current_password ?? "");
       const newPassword = String(body.new_password ?? "");
@@ -97,24 +104,53 @@ Deno.serve(async req => {
       if (passwordError) throw passwordError;
       const { error: profileError } = await admin.from("um_profiles").update({ force_password_change: false }).eq("user_id", user.id);
       if (profileError) throw profileError;
-      return response({ ok: true, message: "Password changed. You can now access the unit workspace." });
+      return response({ ok: true, message: "Password changed." });
     }
 
-    const { unitId } = await requireAdmin(user.id);
+    if (action === "review_unit_registration") {
+      const { data: superRole, error: superError } = await admin.from("um_platform_roles")
+        .select("role").eq("user_id", user.id).eq("role", "super_admin").maybeSingle();
+      if (superError || !superRole) return response({ error: "Only the Platform Super Admin can review unit registrations." }, 403);
+      const requestId = String(body.request_id ?? "");
+      const decision = String(body.decision ?? "");
+      const reason = String(body.reason ?? "");
+      if (!requestId || !["approve", "reject"].includes(decision)) return response({ error: "Choose a valid request and decision." }, 400);
+      const { data, error } = await admin.rpc("um_review_unit_registration", {
+        p_request_id: requestId, p_decision: decision, p_reason: reason, p_reviewer: user.id,
+      });
+      if (error) throw error;
+      return response({ ok: true, data, message: decision === "approve" ? "Unit approved and ANO access activated." : "Registration rejected." });
+    }
+
+    const { unitId, profile } = await requireUnitAdmin(user.id);
+
+    if (action === "set_unit_admin") {
+      if (profile.access_level !== "ano") return response({ error: "Only the ANO can grant or revoke delegated administrator access." }, 403);
+      const targetUserId = String(body.user_id ?? "");
+      const grant = body.grant === true;
+      if (!targetUserId) return response({ error: "Choose a member." }, 400);
+      const { data, error } = await admin.rpc("um_set_unit_admin_access", {
+        p_actor: user.id, p_target: targetUserId, p_grant: grant, p_reason: String(body.reason ?? ""),
+      });
+      if (error) throw error;
+      return response({ ok: true, data, message: grant ? "Delegated administrator access granted." : "Delegated administrator access revoked." });
+    }
+
     if (action === "seed_demo") {
+      if (profile.access_level !== "ano") return response({ error: "Only the ANO may seed demo data." }, 403);
       const { data, error } = await admin.rpc("um_seed_demo");
       if (error) throw error;
       return response({ ok: true, data });
     }
+
     if (action === "invite") {
-      // New accounts start with the baseline role; role changes are SQL-only.
-      const role = "cadet";
       const fullName = String(body.full_name ?? "").trim();
       const regimentalNo = safeRegimental(body.regimental_no);
       const rankTitle = String(body.rank_title ?? "").trim();
+      const appointment = String(body.appointment ?? "").trim() || null;
       const isCadet = body.is_cadet !== false;
       const flightId = body.flight_id ? String(body.flight_id) : null;
-      if (fullName.length < 2 || rankTitle.length < 2 || rankTitle.length > 100) return response({ error: "Full name and rank/appointment are required." }, 400);
+      if (fullName.length < 2 || rankTitle.length < 2 || rankTitle.length > 100) return response({ error: "Full name and NCC rank are required." }, 400);
       if (flightId) {
         const { data: flight, error } = await admin.from("um_flights").select("id").eq("id", flightId).eq("unit_id", unitId).eq("is_active", true).maybeSingle();
         if (error || !flight) return response({ error: "Selected flight is not active in this unit." }, 400);
@@ -124,15 +160,31 @@ Deno.serve(async req => {
       const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
       if (createError || !created.user) throw createError ?? new Error("Could not create account.");
       const userId = created.user.id;
-      const { error: profileError } = await admin.from("um_profiles").insert({ user_id: userId, unit_id: unitId, flight_id: flightId, full_name: fullName, email, regimental_no: regimentalNo, rank_title: rankTitle, force_password_change: true, is_active: true });
+      const { error: profileError } = await admin.from("um_profiles").insert({
+        user_id: userId, unit_id: unitId, flight_id: flightId, full_name: fullName, email,
+        regimental_no: regimentalNo, rank_title: rankTitle, appointment, access_level: "user",
+        force_password_change: true, is_active: true,
+      });
       if (profileError) { await admin.auth.admin.deleteUser(userId); throw profileError; }
-      const { error: roleError } = await admin.from("um_user_roles").insert({ user_id: userId, unit_id: unitId, role, granted_by: user.id });
-      if (roleError) { await admin.auth.admin.deleteUser(userId); await admin.from("um_profiles").delete().eq("user_id", userId).eq("unit_id", unitId); throw roleError; }
+      const { error: roleError } = await admin.from("um_user_roles").insert({ user_id: userId, unit_id: unitId, role: "cadet", granted_by: user.id });
+      if (roleError) { await admin.from("um_profiles").delete().eq("user_id", userId).eq("unit_id", unitId); await admin.auth.admin.deleteUser(userId); throw roleError; }
       if (isCadet) {
-        const { error: cadetError } = await admin.from("um_cadets").insert({ unit_id: unitId, user_id: userId, flight_id: flightId, regimental_no: regimentalNo, full_name: fullName, year_of_training: Number(body.year_of_training ?? 1), rank: rankTitle, wing: "AIR" });
-        if (cadetError) { await admin.from("um_user_roles").delete().eq("user_id", userId).eq("unit_id", unitId); await admin.from("um_profiles").delete().eq("user_id", userId).eq("unit_id", unitId); await admin.auth.admin.deleteUser(userId); throw cadetError; }
+        const { error: cadetError } = await admin.from("um_cadets").insert({
+          unit_id: unitId, user_id: userId, flight_id: flightId, regimental_no: regimentalNo,
+          full_name: fullName, year_of_training: Number(body.year_of_training ?? 1), rank: rankTitle, wing: "AIR",
+        });
+        if (cadetError) {
+          await admin.from("um_user_roles").delete().eq("user_id", userId).eq("unit_id", unitId);
+          await admin.from("um_profiles").delete().eq("user_id", userId).eq("unit_id", unitId);
+          await admin.auth.admin.deleteUser(userId);
+          throw cadetError;
+        }
       }
-      return response({ ok: true, message: "Account created with the baseline Cadet role. Share the temporary password securely and require a change at first login. Assign any different application role only in Supabase SQL.", username: regimentalNo, email, temporary_password: password });
+      await admin.from("um_audit_log").insert({
+        unit_id: unitId, actor_id: user.id, action: "member_created", table_name: "um_profiles",
+        record_id: userId, after_data: { full_name: fullName, regimental_no: regimentalNo, rank_title: rankTitle, appointment, access_level: "user" },
+      });
+      return response({ ok: true, message: "Member created with standard User access. A temporary password was generated; share it securely.", username: regimentalNo, email, temporary_password: password });
     }
 
     if (action === "update_member") {
@@ -141,8 +193,11 @@ Deno.serve(async req => {
       const flightId = body.flight_id ? String(body.flight_id) : null;
       if (!targetUserId) return response({ error: "Choose an existing member." }, 400);
       if (targetUserId === user.id) return response({ error: "You cannot change your own access from this screen." }, 403);
-      const { data: targetRole, error: targetRoleError } = await admin.from("um_user_roles").select("role").eq("user_id", targetUserId).eq("unit_id", unitId).maybeSingle();
-      if (targetRoleError || !targetRole || targetRole.role === "admin") return response({ error: "This member cannot be changed through routine user management." }, 403);
+      const { data: targetProfile, error: targetProfileError } = await admin.from("um_profiles")
+        .select("user_id,access_level").eq("user_id", targetUserId).eq("unit_id", unitId).maybeSingle();
+      if (targetProfileError || !targetProfile || targetProfile.access_level === "ano" || targetProfile.access_level === "unit_admin") {
+        return response({ error: "This member's administrator access cannot be changed through routine member management." }, 403);
+      }
       if (flightId) {
         const { data: flight, error } = await admin.from("um_flights").select("id").eq("id", flightId).eq("unit_id", unitId).eq("is_active", true).maybeSingle();
         if (error || !flight) return response({ error: "Selected flight is not active in this unit." }, 400);
@@ -151,11 +206,17 @@ Deno.serve(async req => {
       if (profileUpdateError) throw profileUpdateError;
       const { error: cadetUpdateError } = await admin.from("um_cadets").update({ flight_id: flightId, status: isActive ? "ACTIVE" : "INACTIVE" }).eq("user_id", targetUserId).eq("unit_id", unitId);
       if (cadetUpdateError) throw cadetUpdateError;
-      return response({ ok: true, message: "Member access and flight assignment updated." });
+      await admin.from("um_audit_log").insert({
+        unit_id: unitId, actor_id: user.id, action: "member_updated", table_name: "um_profiles",
+        record_id: targetUserId, after_data: { flight_id: flightId, is_active: isActive },
+      });
+      return response({ ok: true, message: "Member details updated." });
     }
-    return response({ error: "Unsupported action." }, 400);
+
+    return response({ error: action === "bootstrap" ? "One-time bootstrap is retired. Register a unit and wait for Platform Super Admin approval." : "Unsupported action." }, 400);
   } catch (error) {
     console.error("unit-manager-admin-users:", error);
-    return response({ error: error instanceof Error ? error.message : "Unexpected server error." }, 400);
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    return response({ error: message }, 400);
   }
 });
