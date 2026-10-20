@@ -9,3 +9,39 @@
 .admin-stack{display:flex;flex-direction:column;gap:17px}.admin-stack .panel-head{align-items:center}.admin-stack .policy{margin:16px}.admin-form{padding:18px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.admin-form label{display:flex;flex-direction:column;gap:7px;color:#9fb0c5;font-size:10px}.admin-form input,.admin-form select{min-width:0;width:100%;padding:10px 11px;border-radius:5px;border:1px solid #2d4158;background:#0b1624;color:#e6eef8;font-size:11px}.admin-submit{display:flex;align-items:end}.admin-submit .primary{min-height:36px}.admin-note{padding:0 17px 16px;margin:0}.admin-table{min-width:980px}.admin-table td{padding:9px 10px;vertical-align:middle}.cell-input{width:120px;max-width:100%;padding:7px 8px;background:#0c1725;border:1px solid #2a3c51;border-radius:4px;color:#dce7f4;font-size:10px}.cell-input:focus{border-color:#60a9e8;outline:1px solid #60a9e866}.name-input{width:155px}.cell-sub{display:block;color:#6f849d;font:9px 'DM Mono',monospace;padding:4px 2px 0}.small-button{padding:7px 9px;font-size:10px}.flight-create{grid-template-columns:1fr 1.2fr 1.4fr auto;border-bottom:1px solid var(--line)}.admin-stack .panel-head .status{margin-left:auto}
 @media(max-width:1000px){.admin-form{grid-template-columns:repeat(2,minmax(0,1fr))}.flight-create{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.admin-form,.flight-create{grid-template-columns:1fr}.admin-stack .panel-head{align-items:flex-start}.admin-stack .panel-head>.status{margin-left:0}.admin-submit .primary{width:100%}}
+
+
+/* Platform Super Admin and unit-registration workflow */
+.platform-shell{min-height:100vh;background:var(--bg);color:#e9eff8}
+.platform-header{min-height:78px;padding:16px clamp(18px,4vw,54px);display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line);background:#0b1320}
+.platform-header .brand{display:flex;align-items:center;gap:12px}
+.platform-header .brand b{display:block;font-family:Manrope,sans-serif;font-size:14px;letter-spacing:.07em}
+.platform-header .brand small{display:block;color:#73869e;font:10px 'DM Mono',monospace;letter-spacing:.1em;margin-top:5px}
+.platform-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.platform-content{max-width:1440px;margin:0 auto;padding:clamp(18px,3vw,38px);display:grid;gap:22px}
+.platform-content .page-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px}
+.platform-content .page-heading h1{font:800 clamp(24px,3vw,34px) Manrope,sans-serif;margin:9px 0}
+.platform-content .page-heading p{max-width:720px;color:var(--muted);font-size:13px;line-height:1.7;margin:0}
+.platform-count{min-width:130px;border:1px solid var(--line);background:var(--panel);padding:15px 18px;border-radius:8px}
+.platform-count strong{display:block;font:800 27px Manrope,sans-serif;color:var(--cyan)}
+.platform-count span{font-size:11px;color:var(--muted)}
+.registration-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px;padding:16px}
+.registration-card{border:1px solid var(--line);background:linear-gradient(150deg,var(--panel),#0c1625);border-radius:9px;padding:18px;min-width:0}
+.registration-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.registration-card h3{font:700 19px Manrope,sans-serif;margin:14px 0 4px}
+.registration-details{display:grid;grid-template-columns:minmax(100px,.8fr) minmax(0,1.2fr);gap:10px 14px;margin:20px 0;font-size:12px}
+.registration-details span{color:var(--muted)}
+.registration-details b{overflow-wrap:anywhere;font-weight:600}
+.registration-actions{display:flex;gap:9px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:15px}
+.btn.danger{background:#401d28;color:#ffd9de;border:1px solid #743543}
+.btn.danger:hover{background:#572331}
+.platform-footnote{font-size:11px;text-align:center}
+.registration-form{margin:18px 0}
+.registration-form label{min-width:0}
+.registration-status{display:flex;flex-direction:column;align-items:center;text-align:center;gap:13px;max-width:640px;margin:8vh auto;padding:28px}
+.registration-status h1{margin:0}
+.registration-status>p{max-width:500px;line-height:1.7;color:var(--muted)}
+.registration-status .policy{max-width:460px;text-align:left}
+.login-feedback{position:relative;z-index:2;width:min(600px,calc(100% - 32px));margin:10px auto}
+.member-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+@media(max-width:680px){.platform-header{align-items:flex-start;flex-direction:column}.platform-actions{width:100%}.platform-content .page-heading{align-items:flex-start;flex-direction:column}.platform-count{width:100%}.registration-grid{padding:10px}.registration-actions .btn{flex:1;justify-content:center}.member-actions{min-width:170px}}
