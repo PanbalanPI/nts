@@ -57,6 +57,11 @@ create policy um_platform_roles_select_self_or_super_admin
 on public.um_platform_roles for select to authenticated
 using (user_id = auth.uid() or public.um_is_platform_super_admin());
 
+drop policy if exists um_units_select_super_admin on public.um_units;
+create policy um_units_select_super_admin
+on public.um_units for select to authenticated
+using (public.um_is_platform_super_admin());
+
 create table if not exists public.um_unit_registration_requests (
   id uuid primary key default gen_random_uuid(),
   applicant_user_id uuid not null references auth.users(id) on delete cascade,
@@ -269,5 +274,80 @@ $$;
 
 revoke all on function public.um_review_unit_registration(uuid, text, text, uuid) from public, anon, authenticated;
 grant execute on function public.um_review_unit_registration(uuid, text, text, uuid) to service_role;
+
+
+-- Atomically grant/revoke one of the ANO's four delegated administrator slots.
+create or replace function public.um_set_unit_admin_access(
+  p_actor uuid,
+  p_target uuid,
+  p_grant boolean,
+  p_reason text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+  v_unit uuid;
+  v_target_level text;
+  v_previous_role text;
+  v_count integer;
+begin
+  select unit_id into v_unit
+  from public.um_profiles
+  where user_id = p_actor and access_level = 'ano' and is_active = true
+  for update;
+  if v_unit is null then
+    raise exception 'Only the active ANO can manage delegated administrators.';
+  end if;
+  if p_target = p_actor then
+    raise exception 'The ANO cannot change their own administrator access.';
+  end if;
+
+  perform 1 from public.um_units where id = v_unit for update;
+  select access_level into v_target_level
+  from public.um_profiles
+  where user_id = p_target and unit_id = v_unit and is_active = true
+  for update;
+  if not found then raise exception 'Target member is not active in this unit.'; end if;
+
+  select role::text into v_previous_role
+  from public.um_user_roles
+  where user_id = p_target and unit_id = v_unit;
+
+  if p_grant then
+    if v_target_level = 'ano' then raise exception 'The ANO cannot be delegated as a unit administrator.'; end if;
+    select count(*) into v_count from public.um_profiles
+    where unit_id = v_unit and access_level = 'unit_admin' and is_active = true and user_id <> p_target;
+    if v_count >= 4 then raise exception 'All four delegated administrator slots are in use.'; end if;
+
+    update public.um_profiles set access_level = 'unit_admin', updated_at = now()
+    where user_id = p_target and unit_id = v_unit;
+    update public.um_user_roles set role = 'admin'::public.um_role, granted_by = p_actor
+    where user_id = p_target and unit_id = v_unit;
+    insert into public.um_unit_admin_audit(unit_id,target_user_id,changed_by,action,reason,metadata)
+    values(v_unit,p_target,p_actor,'granted',nullif(trim(coalesce(p_reason,'')), ''),
+      jsonb_build_object('previous_role',coalesce(v_previous_role,'cadet')));
+    return jsonb_build_object('ok',true,'access_level','unit_admin');
+  else
+    if v_target_level <> 'unit_admin' then raise exception 'This member is not a delegated administrator.'; end if;
+    update public.um_profiles set access_level = 'user', updated_at = now()
+    where user_id = p_target and unit_id = v_unit;
+    update public.um_user_roles
+    set role = coalesce(nullif((select a.metadata->>'previous_role'
+      from public.um_unit_admin_audit a
+      where a.unit_id = v_unit and a.target_user_id = p_target and a.action = 'granted'
+      order by a.created_at desc limit 1), ''), 'cadet')::public.um_role,
+      granted_by = p_actor
+    where user_id = p_target and unit_id = v_unit;
+    insert into public.um_unit_admin_audit(unit_id,target_user_id,changed_by,action,reason,metadata)
+    values(v_unit,p_target,p_actor,'revoked',nullif(trim(coalesce(p_reason,'')), ''),'{}'::jsonb);
+    return jsonb_build_object('ok',true,'access_level','user');
+  end if;
+end;
+$;
+revoke all on function public.um_set_unit_admin_access(uuid, uuid, boolean, text) from public, anon, authenticated;
+grant execute on function public.um_set_unit_admin_access(uuid, uuid, boolean, text) to service_role;
 
 commit;
