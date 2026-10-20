@@ -104,7 +104,7 @@ using (
 
 create table if not exists public.um_unit_admin_audit (
   id bigint generated always as identity primary key,
-  unit_id uuid not null references public.um_units(id) on delete cascade,
+  unit_id uuid references public.um_units(id) on delete cascade,
   target_user_id uuid references auth.users(id) on delete set null,
   changed_by uuid references auth.users(id) on delete set null,
   action text not null check (action in ('granted', 'revoked', 'registration_approved', 'registration_rejected')),
