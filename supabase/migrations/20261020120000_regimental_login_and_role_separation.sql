@@ -4,7 +4,7 @@ alter table public.um_profiles
   add column if not exists regimental_no text,
   add column if not exists rank_title text not null default 'Cadet';
 update public.um_profiles p
-set regimental_no=c.regimental_no, rank_title=coalesce(nullif(p.rank_title,''),c.rank,'Cadet')
+set regimental_no=c.regimental_no, rank_title=case when p.rank_title='Cadet' then coalesce(c.rank,'Cadet') else p.rank_title end
 from public.um_cadets c
 where c.user_id=p.user_id and c.unit_id=p.unit_id and p.regimental_no is null;
 do $$
