@@ -287,7 +287,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
-as $
+as $$
 declare
   v_unit uuid;
   v_target_level text;
@@ -346,7 +346,7 @@ begin
     return jsonb_build_object('ok',true,'access_level','user');
   end if;
 end;
-$;
+$$;
 revoke all on function public.um_set_unit_admin_access(uuid, uuid, boolean, text) from public, anon, authenticated;
 grant execute on function public.um_set_unit_admin_access(uuid, uuid, boolean, text) to service_role;
 
