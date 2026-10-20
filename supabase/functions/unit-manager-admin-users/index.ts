@@ -124,6 +124,18 @@ Deno.serve(async req => {
 
     const { unitId, profile } = await requireUnitAdmin(user.id);
 
+    if (action === "set_senior_access") {
+      if (profile.access_level !== "ano") return response({ error: "Only the ANO can assign Senior application access." }, 403);
+      const targetUserId = String(body.user_id ?? "");
+      const grant = body.grant === true;
+      if (!targetUserId) return response({ error: "Choose a member." }, 400);
+      const { data, error } = await admin.rpc("um_set_senior_access", {
+        p_actor: user.id, p_target: targetUserId, p_grant: grant, p_reason: String(body.reason ?? ""),
+      });
+      if (error) throw error;
+      return response({ ok: true, data, message: grant ? "Senior application access granted." : "Senior application access revoked." });
+    }
+
     if (action === "set_unit_admin") {
       if (profile.access_level !== "ano") return response({ error: "Only the ANO can grant or revoke delegated administrator access." }, 403);
       const targetUserId = String(body.user_id ?? "");
