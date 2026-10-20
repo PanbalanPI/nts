@@ -154,8 +154,10 @@ begin
   end if;
 
   if new.access_level = 'ano' and new.is_active then
-    if tg_op = 'UPDATE' and old.unit_id = new.unit_id and old.access_level = 'ano' then
-      return new;
+    if tg_op = 'UPDATE' then
+      if old.unit_id = new.unit_id and old.access_level = 'ano' then
+        return new;
+      end if;
     end if;
     if exists (
       select 1 from public.um_profiles p
